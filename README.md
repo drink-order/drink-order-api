@@ -15,7 +15,7 @@ Then create the necessary database.
 
 ```
 php artisan db
-create database blog
+create database drink-order
 ```
 
 And run the initial migrations and seeders.
