@@ -46,7 +46,7 @@
 
 1. Simply run:
     ```sh
-    composer run dev
+    php artisan serve
     ```
 
 ## Notes
