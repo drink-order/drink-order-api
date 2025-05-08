@@ -58,6 +58,11 @@ class User extends Authenticatable
         return $this->hasMany(Category::class);
     }
 
+    public function invitations()
+    {
+        return $this->hasMany(UserInvitation::class);
+    }
+
     /**
      * Check if user has a specific role
      */
