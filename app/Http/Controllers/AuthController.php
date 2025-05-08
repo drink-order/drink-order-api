@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\PhoneOtp;
 use App\Models\User;
+use App\Models\UserInvitation;
 use App\Services\TwilioService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -243,5 +244,43 @@ class AuthController extends Controller
     public function user(Request $request)
     {
         return response()->json($request->user());
+    }
+
+    /**
+     * Handle invitation authentication
+     */
+    public function handleInvitation(string $token)
+    {
+        $invitation = UserInvitation::where('token', $token)
+            ->with('user')
+            ->first();
+
+        if (!$invitation) {
+            return response()->json([
+                'message' => 'Invalid invitation link.'
+            ], 404);
+        }
+
+        if (!$invitation->isValid()) {
+            return response()->json([
+                'message' => 'This invitation has expired or already been used.'
+            ], 400);
+        }
+
+        // Get the user
+        $user = $invitation->user;
+
+        // Mark invitation as used
+        $invitation->update([
+            'used_at' => now()
+        ]);
+
+        // Create authentication token
+        $authToken = $user->createToken('invitation_auth')->plainTextToken;
+
+        return response()->json([
+            'user' => $user,
+            'token' => $authToken
+        ]);
     }
 }

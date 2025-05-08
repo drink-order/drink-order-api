@@ -19,6 +19,9 @@ Route::get('/test-twilio', function (App\Services\TwilioService $twilio) {
     return response()->json($twilio->testConnection());
 });
 
+// Invitation authentication route (public)
+Route::get('/auth/invitation/{token}', [AuthController::class, 'handleInvitation']);
+
 // Google OAuth routes
 Route::get('/auth/google', [AuthController::class, 'redirectToGoogle']);
 Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
@@ -32,8 +35,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('categories', CategoryController::class);
     
     // Admin-only routes
-    Route::middleware('role:admin')->prefix('admin')->group(function () {
-        // Add your admin routes here
+    Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+        Route::get('/invitations', [App\Http\Controllers\Admin\InvitationController::class, 'index']);
+        Route::post('/invitations', [App\Http\Controllers\Admin\InvitationController::class, 'store']);
+        Route::get('/invitations/{token}/qrcode', [App\Http\Controllers\Admin\InvitationController::class, 'generateQrCode']);
+        Route::delete('/invitations/{token}', [App\Http\Controllers\Admin\InvitationController::class, 'revoke']);
     });
     
     // Shop owner routes
