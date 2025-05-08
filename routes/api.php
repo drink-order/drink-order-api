@@ -5,13 +5,44 @@ use App\Http\Controllers\CategoryController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
-
-Route::apiResource('categories', CategoryController::class);
-
+// Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 
+// OTP routes with throttling
+Route::middleware('throttle:otp')->group(function () {
+    Route::post('/send-otp', [AuthController::class, 'sendOtp']);
+    Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
+});
+
+Route::get('/test-twilio', function (App\Services\TwilioService $twilio) {
+    return response()->json($twilio->testConnection());
+});
+
+// Google OAuth routes
+Route::get('/auth/google', [AuthController::class, 'redirectToGoogle']);
+Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
+
+// Protected routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/user', [AuthController::class, 'user']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+    
+    // Categories routes
+    Route::apiResource('categories', CategoryController::class);
+    
+    // Admin-only routes
+    Route::middleware('role:admin')->prefix('admin')->group(function () {
+        // Add your admin routes here
+    });
+    
+    // Shop owner routes
+    Route::middleware('role:shop_owner')->prefix('shop')->group(function () {
+        // Add your shop owner routes here
+    });
+    
+    // Staff routes
+    Route::middleware('role:staff')->prefix('staff')->group(function () {
+        // Add your staff routes here
+    });
+});
