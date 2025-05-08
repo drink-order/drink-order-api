@@ -3,6 +3,9 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Console\Scheduling\Schedule;
+use App\Http\Middleware\CheckRole;
+use App\Console\Commands\CleanupExpiredOtps;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -11,10 +14,21 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        CleanupExpiredOtps::class,
+    ])
+    ->withSchedule(function (Schedule $schedule) {
+        $schedule->command('otp:cleanup')->hourly();
+    })
     ->withMiddleware(function (Middleware $middleware) {
-        // Disable CSRF protection by excluding all routes
+        // Disable CSRF protection
         $middleware->validateCsrfTokens(except: [
             '*'
+        ]);
+        
+        // Register the role middleware
+        $middleware->alias([
+            'role' => CheckRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
