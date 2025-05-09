@@ -2,7 +2,12 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ToppingController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
@@ -35,11 +40,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('categories', CategoryController::class);
     
     // Admin-only routes
-    Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
-        Route::get('/invitations', [App\Http\Controllers\Admin\InvitationController::class, 'index']);
-        Route::post('/invitations', [App\Http\Controllers\Admin\InvitationController::class, 'store']);
-        Route::get('/invitations/{token}/qrcode', [App\Http\Controllers\Admin\InvitationController::class, 'generateQrCode']);
-        Route::delete('/invitations/{token}', [App\Http\Controllers\Admin\InvitationController::class, 'revoke']);
+    Route::middleware('role:admin')->prefix('admin')->group(function () {
+        Route::get('/invitations', [InvitationController::class, 'index']);
+        Route::post('/invitations', [InvitationController::class, 'store']);
+        Route::get('/invitations/{token}/qrcode', [InvitationController::class, 'generateQrCode']);
+        Route::delete('/invitations/{token}', [InvitationController::class, 'revoke']);
     });
     
     // Shop owner routes
@@ -51,4 +56,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:staff')->prefix('staff')->group(function () {
         // Add your staff routes here
     });
+
+    // Product routes
+    Route::apiResource('products', ProductController::class);
+
+    // Topping routes
+    Route::apiResource('toppings', ToppingController::class);
+
+    // Order routes
+    Route::apiResource('orders', OrderController::class)->except(['update', 'destroy']);
+    Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus']);
+
+    // Dashboard route
+    Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('auth:sanctum');
+
+    // Notification routes
+    Route::get('/notifications', [NotificationController::class, 'index'])->middleware('auth:sanctum');
+    Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead'])->middleware('auth:sanctum');
+    Route::patch('/notifications/read-all', [NotificationController::class, 'markAllAsRead'])->middleware('auth:sanctum');
 });

@@ -118,6 +118,11 @@ class TwilioService
         return $this->sendSMS($to, $message);
     }
 
+    /**
+     * Test Twilio connection
+     *
+     * @return array Connection status
+     */
     public function testConnection(): array
     {
         $status = [
