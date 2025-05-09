@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
@@ -21,7 +22,7 @@ class DashboardController extends Controller
         if ($user->isAdmin()) {
             return $this->adminDashboard();
         } elseif ($user->isShopOwner()) {
-            return $this->shopOwnerDashboard();
+            return $this->shopOwnerDashboard($request);
         } elseif ($user->isStaff()) {
             return $this->staffDashboard();
         } else {
@@ -78,19 +79,53 @@ class DashboardController extends Controller
     /**
      * Shop owner dashboard stats
      */
-    private function shopOwnerDashboard()
+    private function shopOwnerDashboard(Request $request)
     {
+        // Get date range parameters
+        $period = $request->input('period', 'all'); // Options: day, week, month, year, all, custom
+        $startDate = $request->input('start_date');
+        $endDate = $request->input('end_date');
+
+        // Build date query based on period
+        $dateQuery = Order::query();
+        if ($period === 'day') {
+            $dateQuery->whereDate('created_at', Carbon::today());
+        } elseif ($period === 'week') {
+            $dateQuery->whereBetween('created_at', [Carbon::now()->startOfWeek(), Carbon::now()->endOfWeek()]);
+        } elseif ($period === 'month') {
+            $dateQuery->whereMonth('created_at', Carbon::now()->month)
+                    ->whereYear('created_at', Carbon::now()->year);
+        } elseif ($period === 'year') {
+            $dateQuery->whereYear('created_at', Carbon::now()->year);
+        } elseif ($period === 'custom' && $startDate && $endDate) {
+            $dateQuery->whereBetween('created_at', [Carbon::parse($startDate), Carbon::parse($endDate)]);
+        }
+
+        // Staff count
+        $staffCount = User::where('role', 'staff')->count();
+        
         // Product stats
         $totalProducts = Product::count();
         $availableProducts = Product::where('is_available', true)->count();
         
-        // Order stats
-        $totalOrders = Order::count();
-        $completedOrders = Order::where('order_status', 'completed')->count();
-        $pendingOrders = Order::where('order_status', 'pending')->count();
+        // Order stats with time filtering
+        $completedOrders = (clone $dateQuery)->where('order_status', 'completed')->count();
+        $readyOrders = (clone $dateQuery)->where('order_status', 'ready_for_pickup')->count();
+        $preparingOrders = (clone $dateQuery)->where('order_status', 'preparing')->count();
         
         // Revenue stats
-        $totalRevenue = Order::where('order_status', 'completed')->sum('total_price');
+        $totalRevenue = (clone $dateQuery)->where('order_status', 'completed')->sum('total_price');
+        
+        // Orders by date (for chart)
+        $ordersByDate = Order::select(
+                DB::raw('DATE(created_at) as date'),
+                DB::raw('COUNT(*) as count'),
+                DB::raw("SUM(CASE WHEN order_status = 'completed' THEN 1 ELSE 0 END) as completed"),
+                DB::raw('SUM(total_price) as revenue')
+            )
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get();
         
         // Popular products
         $popularProducts = DB::table('order_items')
@@ -109,17 +144,22 @@ class DashboardController extends Controller
             ->get();
         
         return response()->json([
+            'staff_count' => $staffCount,
             'products' => [
                 'total' => $totalProducts,
                 'available' => $availableProducts,
             ],
             'orders' => [
-                'total' => $totalOrders,
+                'total' => $completedOrders + $readyOrders + $preparingOrders,
                 'completed' => $completedOrders,
-                'pending' => $pendingOrders,
+                'ready_for_pickup' => $readyOrders,
+                'preparing' => $preparingOrders,
             ],
             'revenue' => [
                 'total' => $totalRevenue,
+            ],
+            'chart_data' => [
+                'orders_by_date' => $ordersByDate
             ],
             'popular_products' => $popularProducts,
             'recent_orders' => $recentOrders,
@@ -133,12 +173,12 @@ class DashboardController extends Controller
     {
         // Order stats
         $totalOrders = Order::count();
-        $pendingOrders = Order::where('order_status', 'pending')->count();
-        $processingOrders = Order::where('order_status', 'processing')->count();
-        
-        // Pending orders that need attention
+        $preparingOrders = Order::where('order_status', 'preparing')->count();
+        $readyForPickupOrders = Order::where('order_status', 'ready_for_pickup')->count();
+
+        // Orders that need attention
         $ordersNeedingAttention = Order::with(['user', 'orderItems.productSize.product'])
-            ->where('order_status', 'pending')
+            ->where('order_status', 'preparing')
             ->latest()
             ->take(10)
             ->get();
@@ -146,8 +186,8 @@ class DashboardController extends Controller
         return response()->json([
             'orders' => [
                 'total' => $totalOrders,
-                'pending' => $pendingOrders,
-                'processing' => $processingOrders,
+                'preparing' => $preparingOrders,
+                'ready_for_pickup' => $readyForPickupOrders,
             ],
             'orders_needing_attention' => $ordersNeedingAttention,
         ]);
@@ -160,8 +200,8 @@ class DashboardController extends Controller
     {
         // User order stats
         $totalOrders = Order::where('user_id', $user->id)->count();
-        $pendingOrders = Order::where('user_id', $user->id)
-            ->whereIn('order_status', ['pending', 'processing'])
+        $activeOrders = Order::where('user_id', $user->id)
+            ->whereIn('order_status', ['preparing', 'ready_for_pickup'])
             ->count();
         
         // Recent orders
@@ -174,7 +214,7 @@ class DashboardController extends Controller
         return response()->json([
             'orders' => [
                 'total' => $totalOrders,
-                'pending' => $pendingOrders,
+                'active' => $activeOrders,
             ],
             'recent_orders' => $recentOrders,
         ]);

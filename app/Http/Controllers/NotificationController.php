@@ -29,8 +29,8 @@ class NotificationController extends Controller implements HasMiddleware
             $query->where('read', $request->boolean('read'));
         }
         
-        // Sort by latest by default
-        $notifications = $query->latest()->paginate(15);
+        // Sort by latest by default and get all without pagination
+        $notifications = $query->latest()->get();
         
         return response()->json(['notifications' => $notifications]);
     }

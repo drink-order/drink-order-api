@@ -5,5 +5,4 @@ return [
     App\Providers\EventServiceProvider::class,
     App\Providers\FortifyServiceProvider::class,
     App\Providers\RateLimitServiceProvider::class,
-    App\Providers\EventServiceProvider::class,
 ];
