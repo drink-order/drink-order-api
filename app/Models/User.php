@@ -94,4 +94,9 @@ class User extends Authenticatable
     {
         return $this->hasRole('staff');
     }
+
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class);
+    }
 }

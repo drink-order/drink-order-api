@@ -14,62 +14,73 @@ class CategoryController extends Controller implements HasMiddleware
     public static function middleware()
     {
         return [
-            new Middleware('auth:sanctum', except: ['index', 'show'])
+            new Middleware('auth:sanctum'),
+            new Middleware('role:admin', except: ['index', 'show'])
         ];
     }
     /**
-     * Display a listing of the resource.
+     * Display a listing of categories.
      */
     public function index()
     {
-        return Category::all();
+        return response()->json(['categories' => Category::all()]);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Store a newly created category.
      */
     public function store(Request $request)
     {
         $fields = $request->validate([
-            'name' => 'required|max:255'
+            'name' => 'required|string|max:255'
         ]);
 
-        $category = $request->user()->categories()->create($fields);
+        $category = Category::create([
+            'name' => $fields['name'],
+            'user_id' => $request->user()->id
+        ]);
 
-        return ['category' => $category];
+        return response()->json(['category' => $category], 201);
     }
 
     /**
-     * Display the specified resource.
+     * Display the specified category.
      */
     public function show(Category $category)
     {
-        return ['category' => $category];
+        return response()->json(['category' => $category]);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update the specified category.
      */
     public function update(Request $request, Category $category)
     {
-        Gate::authorize('modify', $category);
         $fields = $request->validate([
-            'name' => 'required|max:255'
+            'name' => 'required|string|max:255'
         ]);
 
         $category->update($fields);
 
-        return ['category' => $category];
+        return response()->json(['category' => $category]);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Remove the specified category.
      */
     public function destroy(Category $category)
     {
-        Gate::authorize('modify', $category);
+        // Check if category has any products
+        $hasProducts = $category->products()->exists();
+        
+        if ($hasProducts) {
+            return response()->json([
+                'message' => 'This category cannot be deleted as it contains products.'
+            ], 422);
+        }
+        
         $category->delete();
 
-        return ['message' => 'The category was deleted'];
+        return response()->json(['message' => 'Category deleted successfully']);
     }
 }
