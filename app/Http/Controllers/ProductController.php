@@ -23,7 +23,7 @@ class ProductController extends Controller implements HasMiddleware
      */
     public function index(Request $request)
     {
-        $query = Product::with(['category', 'sizes']);
+        $query = Product::with(['category', 'sizes', 'toppings.topping']);
         
         // Filter by category if provided
         if ($request->has('category_id')) {
@@ -45,17 +45,18 @@ class ProductController extends Controller implements HasMiddleware
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validatedData = $request->validate([
             'name' => 'required|string|max:255',
             'category_id' => 'required|exists:categories,id',
             'is_available' => 'boolean',
             'image' => 'nullable|image|max:2048', // Max 2MB
-            'sizes' => 'required|array|min:1',
-            'sizes.*.size' => 'required|in:small,medium,large',
-            'sizes.*.price' => 'required|numeric|min:0',
+            'sizes' => 'nullable|array',
+            'sizes.*.size' => 'required_with:sizes|in:none,small,medium,large',
+            'sizes.*.price' => 'required_with:sizes|numeric|min:0',
             'toppings' => 'nullable|array',
             'toppings.*.topping_id' => 'required|exists:toppings,id',
             'toppings.*.price' => 'required|numeric|min:0',
+            'price' => 'required_without:sizes|nullable|numeric|min:0', // Price for products without sizes
         ]);
 
         // Handle image upload
@@ -66,23 +67,31 @@ class ProductController extends Controller implements HasMiddleware
 
         // Create product
         $product = Product::create([
-            'name' => $validated['name'],
-            'category_id' => $validated['category_id'],
-            'is_available' => $validated['is_available'] ?? true,
+            'name' => $validatedData['name'],
+            'category_id' => $validatedData['category_id'],
+            'is_available' => $validatedData['is_available'] ?? true,
             'image_url' => $imagePath ? Storage::url($imagePath) : null,
         ]);
 
-        // Add sizes
-        foreach ($validated['sizes'] as $sizeData) {
+        // Add sizes or default size
+        if (isset($validatedData['sizes']) && !empty($validatedData['sizes'])) {
+            foreach ($validatedData['sizes'] as $sizeData) {
+                $product->sizes()->create([
+                    'size' => $sizeData['size'],
+                    'price' => $sizeData['price'],
+                ]);
+            }
+        } else if (isset($validatedData['price'])) {
+            // Create a default "none" size if no sizes are provided
             $product->sizes()->create([
-                'size' => $sizeData['size'],
-                'price' => $sizeData['price'],
+                'size' => 'none',
+                'price' => $validatedData['price'],
             ]);
         }
 
         // Add toppings if provided
-        if (isset($validated['toppings'])) {
-            foreach ($validated['toppings'] as $toppingData) {
+        if (isset($validatedData['toppings'])) {
+            foreach ($validatedData['toppings'] as $toppingData) {
                 $product->toppings()->create([
                     'topping_id' => $toppingData['topping_id'],
                     'price' => $toppingData['price'],
@@ -110,19 +119,20 @@ class ProductController extends Controller implements HasMiddleware
      */
     public function update(Request $request, Product $product)
     {
-        $validated = $request->validate([
+        $validatedData = $request->validate([
             'name' => 'string|max:255',
             'category_id' => 'exists:categories,id',
             'is_available' => 'boolean',
             'image' => 'nullable|image|max:2048',
-            'sizes' => 'array',
+            'sizes' => 'nullable|array',
             'sizes.*.id' => 'nullable|exists:product_sizes,id',
-            'sizes.*.size' => 'required|in:small,medium,large',
-            'sizes.*.price' => 'required|numeric|min:0',
-            'toppings' => 'array',
+            'sizes.*.size' => 'required_with:sizes|in:none,small,medium,large',
+            'sizes.*.price' => 'required_with:sizes|numeric|min:0',
+            'toppings' => 'nullable|array',
             'toppings.*.id' => 'nullable|exists:product_toppings,id',
             'toppings.*.topping_id' => 'required|exists:toppings,id',
             'toppings.*.price' => 'required|numeric|min:0',
+            'price' => 'nullable|numeric|min:0', // For updating a single price
         ]);
 
         // Handle image upload
@@ -133,17 +143,22 @@ class ProductController extends Controller implements HasMiddleware
             }
             
             $imagePath = $request->file('image')->store('products', 'public');
-            $validated['image_url'] = Storage::url($imagePath);
+            $validatedData['image_url'] = Storage::url($imagePath);
         }
 
         // Update product
-        $product->update($validated);
+        $product->update(array_filter([
+            'name' => $validatedData['name'] ?? null,
+            'category_id' => $validatedData['category_id'] ?? null,
+            'is_available' => $validatedData['is_available'] ?? null,
+            'image_url' => $validatedData['image_url'] ?? null,
+        ]));
 
         // Update sizes if provided
-        if (isset($validated['sizes'])) {
+        if (isset($validatedData['sizes'])) {
             $currentSizeIds = [];
             
-            foreach ($validated['sizes'] as $sizeData) {
+            foreach ($validatedData['sizes'] as $sizeData) {
                 if (isset($sizeData['id'])) {
                     // Update existing size
                     $size = $product->sizes()->find($sizeData['id']);
@@ -166,13 +181,19 @@ class ProductController extends Controller implements HasMiddleware
             
             // Delete sizes not in the update
             $product->sizes()->whereNotIn('id', $currentSizeIds)->delete();
+        } elseif (isset($validatedData['price']) && $product->sizes()->count() === 1) {
+            // Update price for products with a single "none" size
+            $singleSize = $product->sizes()->first();
+            if ($singleSize && $singleSize->size === 'none') {
+                $singleSize->update(['price' => $validatedData['price']]);
+            }
         }
 
         // Update toppings if provided
-        if (isset($validated['toppings'])) {
+        if (isset($validatedData['toppings'])) {
             $currentToppingIds = [];
             
-            foreach ($validated['toppings'] as $toppingData) {
+            foreach ($validatedData['toppings'] as $toppingData) {
                 if (isset($toppingData['id'])) {
                     // Update existing topping
                     $topping = $product->toppings()->find($toppingData['id']);

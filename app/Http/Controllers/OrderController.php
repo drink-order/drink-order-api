@@ -43,7 +43,8 @@ class OrderController extends Controller implements HasMiddleware
         // Sort by latest by default
         $query->latest();
         
-        $orders = $query->paginate(10);
+        // Return all results without pagination
+        $orders = $query->get();
         
         return response()->json(['orders' => $orders]);
     }
@@ -61,65 +62,65 @@ class OrderController extends Controller implements HasMiddleware
             'items.*.toppings.*.topping_id' => 'required|exists:toppings,id',
         ]);
         
-        // Calculate total price and validate all items
-        $totalPrice = 0;
-        $orderItems = [];
+    // Calculate total price and validate all items
+    $totalPrice = 0;
+    $orderItems = [];
+
+    foreach ($validated['items'] as $item) {
+        $productSize = ProductSize::with('product')->findOrFail($item['product_size_id']);
         
-        foreach ($validated['items'] as $item) {
-            $productSize = ProductSize::with('product')->findOrFail($item['product_size_id']);
-            
-            // Check if product is available
-            if (!$productSize->product->is_available) {
-                return response()->json([
-                    'message' => "Product '{$productSize->product->name}' is not available"
-                ], 422);
-            }
-            
-            $itemPrice = $productSize->price * $item['quantity'];
-            $toppingsData = [];
-            
-            // Calculate toppings price
-            if (isset($item['toppings']) && !empty($item['toppings'])) {
-                foreach ($item['toppings'] as $toppingItem) {
-                    $topping = Topping::findOrFail($toppingItem['topping_id']);
-                    
-                    // Check if topping is available
-                    if (!$topping->is_available) {
-                        return response()->json([
-                            'message' => "Topping '{$topping->name}' is not available"
-                        ], 422);
-                    }
-                    
-                    // Get the specific price for this product-topping combination
-                    $productTopping = $productSize->product->toppings()
-                        ->where('topping_id', $topping->id)
-                        ->first();
-                    
-                    if (!$productTopping) {
-                        return response()->json([
-                            'message' => "Topping '{$topping->name}' is not available for product '{$productSize->product->name}'"
-                        ], 422);
-                    }
-                    
-                    $toppingPrice = $productTopping->price;
-                    $itemPrice += $toppingPrice * $item['quantity'];
-                    
-                    $toppingsData[] = [
-                        'topping_id' => $topping->id,
-                        'price' => $toppingPrice
-                    ];
-                }
-            }
-            
-            $totalPrice += $itemPrice;
-            
-            $orderItems[] = [
-                'product_size_id' => $productSize->id,
-                'quantity' => $item['quantity'],
-                'unit_price' => $productSize->price,
-                'toppings' => $toppingsData
-            ];
+        // Check if product is available
+        if (!$productSize->product->is_available) {
+            return response()->json([
+                'message' => "Product '{$productSize->product->name}' is not available"
+            ], 422);
         }
+        
+        $itemPrice = $productSize->price * $item['quantity'];
+        $toppingsData = [];
+        
+        // Calculate toppings price
+        if (isset($item['toppings']) && !empty($item['toppings'])) {
+            foreach ($item['toppings'] as $toppingItem) {
+                $topping = Topping::findOrFail($toppingItem['topping_id']);
+                
+                // Check if topping is available
+                if (!$topping->is_available) {
+                    return response()->json([
+                        'message' => "Topping '{$topping->name}' is not available"
+                    ], 422);
+                }
+                
+                // Get the specific price for this product-topping combination
+                $productTopping = $productSize->product->toppings()
+                    ->where('topping_id', $topping->id)
+                    ->first();
+                
+                if (!$productTopping) {
+                    return response()->json([
+                        'message' => "Topping '{$topping->name}' is not available for product '{$productSize->product->name}'"
+                    ], 422);
+                }
+                
+                $toppingPrice = $productTopping->price;
+                $itemPrice += $toppingPrice * $item['quantity'];
+                
+                $toppingsData[] = [
+                    'topping_id' => $topping->id,
+                    'price' => $toppingPrice
+                ];
+            }
+        }
+        
+        $totalPrice += $itemPrice;
+        
+        $orderItems[] = [
+            'product_size_id' => $productSize->id,
+            'quantity' => $item['quantity'],
+            'unit_price' => $productSize->price,
+            'toppings' => $toppingsData
+        ];
+    }
         
         // Create order with transaction to ensure data integrity
         DB::beginTransaction();
@@ -128,7 +129,7 @@ class OrderController extends Controller implements HasMiddleware
             $order = Order::create([
                 'user_id' => $request->user()->id,
                 'total_price' => $totalPrice,
-                'order_status' => 'pending'
+                'order_status' => 'preparing'
             ]);
             
             // Create order items and toppings
@@ -192,7 +193,7 @@ class OrderController extends Controller implements HasMiddleware
         }
         
         $validated = $request->validate([
-            'order_status' => 'required|in:pending,processing,completed,cancelled',
+            'order_status' => 'required|in:preparing,ready_for_pickup,completed',
         ]);
         
         $oldStatus = $order->order_status;
