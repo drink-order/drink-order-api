@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
+
+Route::middleware('auth:sanctum')->get('/users', [AuthController::class, 'getAllUsers']);
+
 // OTP routes with throttling
 Route::middleware('throttle:otp')->group(function () {
     Route::post('/send-otp', [AuthController::class, 'sendOtp']);

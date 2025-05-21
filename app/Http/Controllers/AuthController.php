@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 class AuthController extends Controller
 {
@@ -83,6 +85,18 @@ class AuthController extends Controller
             'token' => $token
         ]);
     }
+
+    public function getAllUsers()
+    {
+        if (!Auth::user() || Auth::user()->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $users = User::all();
+
+        return response()->json($users);
+    }
+
 
     /**
      * Send OTP for phone authentication
