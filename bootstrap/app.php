@@ -7,6 +7,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use App\Http\Middleware\CheckRole;
 use App\Console\Commands\CleanupExpiredOtps;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Http\Middleware\HandleCors;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -22,6 +23,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('otp:cleanup')->hourly();
     })
     ->withMiddleware(function (Middleware $middleware) {
+
+        $middleware->prepend(HandleCors::class);
+
         // Disable CSRF protection
         $middleware->validateCsrfTokens(except: [
             '*'
