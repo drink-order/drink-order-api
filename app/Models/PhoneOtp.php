@@ -12,7 +12,8 @@ class PhoneOtp extends Model
     protected $fillable = [
         'phone',
         'otp',
-        'expires_at'
+        'expires_at',
+        'name' 
     ];
     
     protected $casts = [

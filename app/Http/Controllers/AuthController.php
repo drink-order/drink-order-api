@@ -105,33 +105,31 @@ class AuthController extends Controller
     {
         $request->validate([
             'phone' => 'required|string|max:20',
+            'name' => 'required|string|max:255',
         ]);
-
-        // Generate 6-digit OTP
+    
         $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        
-        // Save OTP to database with expiration time
+    
         PhoneOtp::updateOrCreate(
             ['phone' => $request->phone],
             [
                 'otp' => $otp,
-                'expires_at' => now()->addMinutes(10), // OTP expires in 10 minutes
+                'expires_at' => now()->addMinutes(10),
+                'name' => $request->name, // Store the name
             ]
         );
-
-        // Send the OTP via SMS
+    
         $smsSent = $this->twilioService->sendOTP($request->phone, $otp);
-        
+    
         if (!$smsSent) {
             return response()->json([
                 'message' => 'Failed to send OTP. Please try again later.',
             ], 500);
         }
-
+    
         return response()->json([
             'message' => 'OTP sent successfully to your phone',
-            // In development only, remove in production
-            'otp' => $otp
+            'otp' => $otp // For testing only
         ]);
     }
 
@@ -142,37 +140,34 @@ class AuthController extends Controller
     {
         $request->validate([
             'phone' => 'required|string|max:20',
-            'otp' => 'required|string|size:6',
-            'name' => 'sometimes|required|string|max:255',
+            'otp' => 'required|string|max:6',
         ]);
-
+    
         $phoneOtp = PhoneOtp::where('phone', $request->phone)
             ->where('otp', $request->otp)
             ->first();
-
+    
         if (!$phoneOtp || !$phoneOtp->isValid()) {
             throw ValidationException::withMessages([
                 'otp' => ['The provided OTP is invalid or expired.'],
             ]);
         }
-
-        // Find or create user
+    
         $user = User::where('phone', $request->phone)->first();
-        
+    
         if (!$user) {
-            if (!$request->has('name')) {
+            if (!$phoneOtp->name) {
                 return response()->json([
                     'message' => 'New user requires name',
                     'requires_registration' => true
                 ], 422);
             }
-            
-            // Generate a unique random email based on phone number
+    
             $uniqueId = uniqid();
             $email = 'phone_user_' . preg_replace('/[^0-9]/', '', $request->phone) . '_' . $uniqueId . '@example.com';
-            
+    
             $user = User::create([
-                'name' => $request->name,
+                'name' => $phoneOtp->name, // Use stored name
                 'phone' => $request->phone,
                 'phone_verified_at' => now(),
                 'role' => 'user',
@@ -183,19 +178,17 @@ class AuthController extends Controller
             $user->phone_verified_at = now();
             $user->save();
         }
-
-        // Delete used OTP
-        $phoneOtp->delete();
-
-        // Create token
-        $token = $user->createToken('phone_auth')->plainTextToken;
-
+    
+        $token = $user->createToken('auth_token')->plainTextToken;
+    
         return response()->json([
-            'user' => $user,
-            'token' => $token
+            'message' => 'OTP verified successfully',
+            'token' => $token,
+            'user' => $user
         ]);
     }
-
+    
+    
     /**
      * Redirect to Google OAuth
      */
