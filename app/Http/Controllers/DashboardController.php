@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
@@ -13,135 +12,65 @@ use Carbon\Carbon;
 class DashboardController extends Controller
 {
     /**
-     * Get dashboard stats based on user role
+     * Shop owner dashboard stats
      */
     public function index(Request $request)
     {
-        $user = $request->user();
-        
-        if ($user->isAdmin()) {
-            return $this->adminDashboard();
-        } elseif ($user->isShopOwner()) {
-            return $this->shopOwnerDashboard($request);
-        } elseif ($user->isStaff()) {
-            return $this->staffDashboard();
-        } else {
-            return $this->userDashboard($user);
-        }
-    }
-    
-    /**
-     * Admin dashboard stats
-     */
-    private function adminDashboard()
-    {
-        // Get counts
-        $userCount = User::count();
-        $categoryCount = Category::count();
-        $productCount = Product::count();
-        $orderCount = Order::count();
-        
-        // Get revenue stats
-        $totalRevenue = Order::where('order_status', 'completed')->sum('total_price');
-        
-        // Recent orders
-        $recentOrders = Order::with(['user', 'orderItems.productSize.product'])
-            ->latest()
-            ->take(5)
-            ->get();
-        
-        // User registration stats by role
-        $usersByRole = User::select('role', DB::raw('count(*) as count'))
-            ->groupBy('role')
-            ->get();
-        
-        // Order status stats
-        $ordersByStatus = Order::select('order_status', DB::raw('count(*) as count'))
-            ->groupBy('order_status')
-            ->get();
-        
-        return response()->json([
-            'counts' => [
-                'users' => $userCount,
-                'categories' => $categoryCount,
-                'products' => $productCount,
-                'orders' => $orderCount,
-            ],
-            'revenue' => [
-                'total' => $totalRevenue,
-            ],
-            'recent_orders' => $recentOrders,
-            'users_by_role' => $usersByRole,
-            'orders_by_status' => $ordersByStatus,
-        ]);
-    }
-    
-    /**
-     * Shop owner dashboard stats
-     */
-    private function shopOwnerDashboard(Request $request)
-    {
         // Get date range parameters
-        $period = $request->input('period', 'all'); // Options: day, week, month, year, all, custom
+        $period = $request->input('period', 'all');
         $startDate = $request->input('start_date');
         $endDate = $request->input('end_date');
 
-        // Build date query based on period
-        $dateQuery = Order::query();
-        if ($period === 'day') {
-            $dateQuery->whereDate('created_at', Carbon::today());
-        } elseif ($period === 'week') {
-            $dateQuery->whereBetween('created_at', [Carbon::now()->startOfWeek(), Carbon::now()->endOfWeek()]);
-        } elseif ($period === 'month') {
-            $dateQuery->whereMonth('created_at', Carbon::now()->month)
-                    ->whereYear('created_at', Carbon::now()->year);
-        } elseif ($period === 'year') {
-            $dateQuery->whereYear('created_at', Carbon::now()->year);
-        } elseif ($period === 'custom' && $startDate && $endDate) {
-            $dateQuery->whereBetween('created_at', [Carbon::parse($startDate), Carbon::parse($endDate)]);
-        }
+        // Build base date query
+        $dateQuery = $this->buildDateQuery($period, $startDate, $endDate);
 
-        // Staff count
+        // Staff count (not affected by date filter)
         $staffCount = User::where('role', 'staff')->count();
         
-        // Product stats
+        // Product stats (not affected by date filter)
         $totalProducts = Product::count();
         $availableProducts = Product::where('is_available', true)->count();
         
-        // Order stats with time filtering
+        // Order stats with date filtering - only completed orders
         $completedOrders = (clone $dateQuery)->where('order_status', 'completed')->count();
-        $readyOrders = (clone $dateQuery)->where('order_status', 'ready_for_pickup')->count();
-        $preparingOrders = (clone $dateQuery)->where('order_status', 'preparing')->count();
         
-        // Revenue stats
+        // Revenue stats with date filtering
         $totalRevenue = (clone $dateQuery)->where('order_status', 'completed')->sum('total_price');
         
-        // Orders by date (for chart)
-        $ordersByDate = Order::select(
+        // Orders by date for chart (apply same date filter)
+        $ordersByDateQuery = Order::select(
                 DB::raw('DATE(created_at) as date'),
                 DB::raw('COUNT(*) as count'),
                 DB::raw("SUM(CASE WHEN order_status = 'completed' THEN 1 ELSE 0 END) as completed"),
-                DB::raw('SUM(total_price) as revenue')
+                DB::raw('SUM(CASE WHEN order_status = \'completed\' THEN total_price ELSE 0 END) as revenue')
             )
             ->groupBy('date')
-            ->orderBy('date')
-            ->get();
+            ->orderBy('date');
+            
+        // Apply date filter to chart data
+        $ordersByDate = $this->applyDateFilterToQuery($ordersByDateQuery, $period, $startDate, $endDate)->get();
         
-        // Popular products
-        $popularProducts = DB::table('order_items')
+        // Popular products with date filtering
+        $popularProductsQuery = DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->join('product_sizes', 'order_items.product_size_id', '=', 'product_sizes.id')
             ->join('products', 'product_sizes.product_id', '=', 'products.id')
             ->select('products.id', 'products.name', DB::raw('SUM(order_items.quantity) as total_quantity'))
+            ->where('orders.order_status', 'completed')
             ->groupBy('products.id', 'products.name')
             ->orderBy('total_quantity', 'desc')
-            ->take(5)
-            ->get();
+            ->take(5);
+            
+        // Apply date filter to popular products
+        $popularProducts = $this->applyDateFilterToQuery($popularProductsQuery, $period, $startDate, $endDate, 'orders.created_at')->get();
         
-        // Recent orders
-        $recentOrders = Order::with(['user', 'orderItems.productSize.product'])
+        // Recent orders with date filtering
+        $recentOrdersQuery = Order::with(['user', 'orderItems.productSize.product'])
+            ->where('order_status', 'completed')
             ->latest()
-            ->take(5)
-            ->get();
+            ->take(10);
+            
+        $recentOrders = $this->applyDateFilterToQuery($recentOrdersQuery, $period, $startDate, $endDate)->get();
         
         return response()->json([
             'staff_count' => $staffCount,
@@ -150,10 +79,7 @@ class DashboardController extends Controller
                 'available' => $availableProducts,
             ],
             'orders' => [
-                'total' => $completedOrders + $readyOrders + $preparingOrders,
                 'completed' => $completedOrders,
-                'ready_for_pickup' => $readyOrders,
-                'preparing' => $preparingOrders,
             ],
             'revenue' => [
                 'total' => $totalRevenue,
@@ -163,60 +89,60 @@ class DashboardController extends Controller
             ],
             'popular_products' => $popularProducts,
             'recent_orders' => $recentOrders,
+            'period_info' => [
+                'period' => $period,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ]
         ]);
     }
     
     /**
-     * Staff dashboard stats
+     * Build date query based on period
      */
-    private function staffDashboard()
+    private function buildDateQuery($period, $startDate = null, $endDate = null)
     {
-        // Order stats
-        $totalOrders = Order::count();
-        $preparingOrders = Order::where('order_status', 'preparing')->count();
-        $readyForPickupOrders = Order::where('order_status', 'ready_for_pickup')->count();
-
-        // Orders that need attention
-        $ordersNeedingAttention = Order::with(['user', 'orderItems.productSize.product'])
-            ->where('order_status', 'preparing')
-            ->latest()
-            ->take(10)
-            ->get();
-        
-        return response()->json([
-            'orders' => [
-                'total' => $totalOrders,
-                'preparing' => $preparingOrders,
-                'ready_for_pickup' => $readyForPickupOrders,
-            ],
-            'orders_needing_attention' => $ordersNeedingAttention,
-        ]);
+        $query = Order::query();
+        return $this->applyDateFilterToQuery($query, $period, $startDate, $endDate);
     }
     
     /**
-     * Regular user dashboard stats
+     * Apply date filter to any query
      */
-    private function userDashboard(User $user)
+    private function applyDateFilterToQuery($query, $period, $startDate = null, $endDate = null, $dateColumn = 'created_at')
     {
-        // User order stats
-        $totalOrders = Order::where('user_id', $user->id)->count();
-        $activeOrders = Order::where('user_id', $user->id)
-            ->whereIn('order_status', ['preparing', 'ready_for_pickup'])
-            ->count();
+        switch ($period) {
+            case 'day':
+                $query->whereDate($dateColumn, Carbon::today());
+                break;
+                
+            case 'week':
+                $query->whereBetween($dateColumn, [
+                    Carbon::now()->startOfWeek(),
+                    Carbon::now()->endOfWeek()
+                ]);
+                break;
+                
+            case 'month':
+                $query->whereMonth($dateColumn, Carbon::now()->month)
+                      ->whereYear($dateColumn, Carbon::now()->year);
+                break;
+                
+            case 'year':
+                $query->whereYear($dateColumn, Carbon::now()->year);
+                break;
+                
+            case 'custom':
+                if ($startDate && $endDate) {
+                    $start = Carbon::parse($startDate)->startOfDay();
+                    $end = Carbon::parse($endDate)->endOfDay();
+                    $query->whereBetween($dateColumn, [$start, $end]);
+                }
+                break;
+                
+            // 'all' - no date filter applied
+        }
         
-        // Recent orders
-        $recentOrders = Order::with(['orderItems.productSize.product'])
-            ->where('user_id', $user->id)
-            ->latest()
-            ->take(5)
-            ->get();
-        
-        return response()->json([
-            'orders' => [
-                'total' => $totalOrders,
-                'active' => $activeOrders,
-            ],
-            'recent_orders' => $recentOrders,
-        ]);
+        return $query;
     }
 }
