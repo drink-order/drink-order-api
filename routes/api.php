@@ -9,6 +9,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
+use App\Actions\Fortify\UpdateUserProfileInformation;
+use Illuminate\Http\Request;
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
@@ -25,6 +27,14 @@ Route::middleware('throttle:otp')->group(function () {
 
 Route::get('/test-twilio', function (App\Services\TwilioService $twilio) {
     return response()->json($twilio->testConnection());
+});
+
+// update profile route (protected)
+Route::middleware('auth:sanctum')->put('/update-profile', function (Request $request) {
+    $updater = new UpdateUserProfileInformation();
+    $updater->update($request->user(), $request->all());
+    
+    return response()->json(['message' => 'Profile updated successfully.']);
 });
 
 // Invitation authentication route (public)
