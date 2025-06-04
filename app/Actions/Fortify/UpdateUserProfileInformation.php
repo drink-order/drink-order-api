@@ -27,6 +27,10 @@ class UpdateUserProfileInformation implements UpdatesUserProfileInformation
                 'max:255',
                 Rule::unique('users')->ignore($user->id),
             ],
+
+            'phone' => ['nullable', 'string', 'max:20'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+
         ])->validateWithBag('updateProfileInformation');
 
         if ($input['email'] !== $user->email &&
@@ -36,8 +40,16 @@ class UpdateUserProfileInformation implements UpdatesUserProfileInformation
             $user->forceFill([
                 'name' => $input['name'],
                 'email' => $input['email'],
+                'phone' => $input['phone'] ?? $user->phone,
             ])->save();
+
         }
+
+            if (!empty($input['password'])) {
+                $user->forceFill([
+                    'password' => bcrypt($input['password']),
+                ])->save();
+            }
     }
 
     /**
@@ -50,8 +62,15 @@ class UpdateUserProfileInformation implements UpdatesUserProfileInformation
         $user->forceFill([
             'name' => $input['name'],
             'email' => $input['email'],
+            'phone' => $input['phone'] ?? $user->phone,
             'email_verified_at' => null,
         ])->save();
+
+        if (!empty($input['password'])) {
+            $user->forceFill([
+                'password' => bcrypt($input['password']),
+            ])->save();
+        }
 
         $user->sendEmailVerificationNotification();
     }
