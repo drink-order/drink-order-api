@@ -213,12 +213,20 @@ class AuthController extends Controller
 
     public function getAllUsers()
     {
-        if (!Auth::user() || Auth::user()->role !== 'admin') {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        $user = Auth::user();
+        
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
         }
-
-        $users = User::all();
-
+        
+        if ($user->role === 'admin') {
+            $users = User::all();
+        } elseif ($user->role === 'shop_owner') {
+            $users = User::where('role', 'staff')->get();
+        } else {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        
         return response()->json($users);
     }
 
