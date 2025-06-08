@@ -8,6 +8,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\UserController; // New controller
 use Illuminate\Support\Facades\Route;
 use App\Actions\Fortify\UpdateUserProfileInformation;
 use Illuminate\Http\Request;
@@ -15,7 +16,7 @@ use Illuminate\Http\Request;
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-
+Route::get('/test-supabase', [App\Http\Controllers\ProductController::class, 'testSupabase']);
 
 Route::middleware('auth:sanctum')->get('/users', [AuthController::class, 'getAllUsers']);
 
@@ -27,14 +28,6 @@ Route::middleware('throttle:otp')->group(function () {
 
 Route::get('/test-twilio', function (App\Services\TwilioService $twilio) {
     return response()->json($twilio->testConnection());
-});
-
-// update profile route (protected)
-Route::middleware('auth:sanctum')->put('/update-profile', function (Request $request) {
-    $updater = new UpdateUserProfileInformation();
-    $updater->update($request->user(), $request->all());
-    
-    return response()->json(['message' => 'Profile updated successfully.']);
 });
 
 // Invitation authentication route (public)
@@ -49,6 +42,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
     
+    // User profile routes (any authenticated user can edit their own profile)
+    Route::get('/profile', [UserController::class, 'getProfile']);
+    Route::put('/profile', [UserController::class, 'updateProfile']);
+    
     // Categories routes
     Route::apiResource('categories', CategoryController::class);
     
@@ -58,11 +55,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/invitations', [InvitationController::class, 'store']);
         Route::get('/invitations/{token}/qrcode', [InvitationController::class, 'generateQrCode']);
         Route::delete('/invitations/{token}', [InvitationController::class, 'revoke']);
+        
+        // Admin user management - can manage any role
+        Route::post('/users', [UserController::class, 'createUser']);
+        Route::get('/users/{user}', [UserController::class, 'getUser']);
+        Route::put('/users/{user}', [UserController::class, 'updateUser']);
+        Route::delete('/users/{user}', [UserController::class, 'deleteUser']);
     });
     
     // Shop owner routes
     Route::middleware('role:shop_owner')->prefix('shop')->group(function () {
-        // Add your shop owner routes here
+        // Shop owner staff management - can only manage staff
+        Route::post('/staff', [UserController::class, 'createStaff']);
+        Route::get('/staff/{user}', [UserController::class, 'getStaff']);
+        Route::put('/staff/{user}', [UserController::class, 'updateStaff']);
+        Route::delete('/staff/{user}', [UserController::class, 'deleteStaff']);
     });
     
     // Staff routes
