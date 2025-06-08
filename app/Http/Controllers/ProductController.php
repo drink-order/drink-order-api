@@ -3,14 +3,21 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller implements HasMiddleware
 {
+    private SupabaseStorageService $supabaseService;
+
+    public function __construct(SupabaseStorageService $supabaseService)
+    {
+        $this->supabaseService = $supabaseService;
+    }
+
     public static function middleware()
     {
         return [
@@ -62,16 +69,26 @@ class ProductController extends Controller implements HasMiddleware
             'toppings' => 'nullable|array',
             'toppings.*.topping_id' => 'required|exists:toppings,id',
             'toppings.*.price' => 'required|numeric|min:0',
-            'price' => 'required_without:sizes|nullable|numeric|min:0', // Price for products without sizes
+            'price' => 'required_without:sizes|nullable|numeric|min:0',
         ]);
 
         Log::info('Store request data:', $request->all());
         Log::info('Store validated data:', $validatedData);
 
-        // Handle image upload
-        $imagePath = null;
+        // Handle image upload to Supabase
+        $imageUrl = null;
         if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('products', 'public');
+            $uploadResult = $this->supabaseService->uploadFile($request->file('image'));
+            
+            if ($uploadResult['success']) {
+                $imageUrl = $uploadResult['url'];
+                Log::info('Image uploaded to Supabase:', $uploadResult);
+            } else {
+                Log::error('Failed to upload image to Supabase:', $uploadResult);
+                return response()->json([
+                    'error' => 'Failed to upload image: ' . $uploadResult['error']
+                ], 500);
+            }
         }
 
         // Create product
@@ -79,7 +96,7 @@ class ProductController extends Controller implements HasMiddleware
             'name' => $validatedData['name'],
             'category_id' => $validatedData['category_id'],
             'is_available' => $validatedData['is_available'] ?? true,
-            'image_url' => $imagePath ? Storage::url($imagePath) : null,
+            'image_url' => $imageUrl,
         ]);
 
         // Add sizes or default size
@@ -154,20 +171,24 @@ class ProductController extends Controller implements HasMiddleware
         Log::info('Update request data:', $request->all());
         Log::info('Update validated data:', $validatedData);
 
-        // Handle image upload
+        // Handle image upload to Supabase
         if ($request->hasFile('image')) {
-            // Delete old image if exists
+            // Delete old image from Supabase if exists
             if ($product->image_url) {
-                $oldImagePath = str_replace('/storage/', '', $product->image_url);
-                if (Storage::disk('public')->exists($oldImagePath)) {
-                    Storage::disk('public')->delete($oldImagePath);
-                    Log::info('Deleted old image:', ['path' => $oldImagePath]);
-                }
+                $this->deleteImageFromUrl($product->image_url);
             }
             
-            $imagePath = $request->file('image')->store('products', 'public');
-            $validatedData['image_url'] = Storage::url($imagePath);
-            Log::info('Uploaded new image:', ['path' => $imagePath]);
+            $uploadResult = $this->supabaseService->uploadFile($request->file('image'));
+            
+            if ($uploadResult['success']) {
+                $validatedData['image_url'] = $uploadResult['url'];
+                Log::info('New image uploaded to Supabase:', $uploadResult);
+            } else {
+                Log::error('Failed to upload new image to Supabase:', $uploadResult);
+                return response()->json([
+                    'error' => 'Failed to upload image: ' . $uploadResult['error']
+                ], 500);
+            }
         }
 
         // Update basic product information
@@ -185,10 +206,9 @@ class ProductController extends Controller implements HasMiddleware
             Log::info('Updated product basic info:', $updateData);
         }
 
-        // Handle sizes update
+        // Handle sizes update (same as before)
         if (array_key_exists('sizes', $validatedData)) {
             if (empty($validatedData['sizes'])) {
-                // If sizes array is empty, delete all sizes and create a single "none" size with price
                 $product->sizes()->delete();
                 Log::info('Deleted all sizes for product');
                 
@@ -200,12 +220,10 @@ class ProductController extends Controller implements HasMiddleware
                     Log::info('Created none size with price:', ['price' => $validatedData['price']]);
                 }
             } else {
-                // Update/create sizes
                 $currentSizeIds = [];
                 
                 foreach ($validatedData['sizes'] as $sizeData) {
                     if (isset($sizeData['id']) && $sizeData['id']) {
-                        // Update existing size
                         $size = $product->sizes()->find($sizeData['id']);
                         if ($size) {
                             $size->update([
@@ -216,7 +234,6 @@ class ProductController extends Controller implements HasMiddleware
                             Log::info('Updated existing size:', ['id' => $size->id, 'size' => $sizeData['size'], 'price' => $sizeData['price']]);
                         }
                     } else {
-                        // Create new size
                         $size = $product->sizes()->create([
                             'size' => $sizeData['size'],
                             'price' => $sizeData['price'],
@@ -226,7 +243,6 @@ class ProductController extends Controller implements HasMiddleware
                     }
                 }
                 
-                // Delete sizes not in the update
                 $deletedSizes = $product->sizes()->whereNotIn('id', $currentSizeIds)->get();
                 if ($deletedSizes->count() > 0) {
                     Log::info('Deleting sizes not in update:', ['ids' => $deletedSizes->pluck('id')->toArray()]);
@@ -234,13 +250,11 @@ class ProductController extends Controller implements HasMiddleware
                 }
             }
         } elseif (isset($validatedData['price'])) {
-            // Update price for single size product
             $singleSize = $product->sizes()->where('size', 'none')->first();
             if ($singleSize) {
                 $singleSize->update(['price' => $validatedData['price']]);
                 Log::info('Updated single size price:', ['price' => $validatedData['price']]);
             } else {
-                // Create new "none" size if it doesn't exist
                 $product->sizes()->create([
                     'size' => 'none',
                     'price' => $validatedData['price'],
@@ -249,10 +263,9 @@ class ProductController extends Controller implements HasMiddleware
             }
         }
 
-        // Handle toppings update
+        // Handle toppings update (same as before)
         if (array_key_exists('toppings', $validatedData)) {
             if (empty($validatedData['toppings'])) {
-                // If toppings array is empty, delete all toppings
                 $deletedToppings = $product->toppings()->get();
                 if ($deletedToppings->count() > 0) {
                     Log::info('Deleting all toppings for product:', ['ids' => $deletedToppings->pluck('id')->toArray()]);
@@ -263,7 +276,6 @@ class ProductController extends Controller implements HasMiddleware
                 
                 foreach ($validatedData['toppings'] as $toppingData) {
                     if (isset($toppingData['id']) && $toppingData['id']) {
-                        // Update existing topping
                         $topping = $product->toppings()->find($toppingData['id']);
                         if ($topping) {
                             $topping->update([
@@ -274,7 +286,6 @@ class ProductController extends Controller implements HasMiddleware
                             Log::info('Updated existing topping:', ['id' => $topping->id, 'topping_id' => $toppingData['topping_id'], 'price' => $toppingData['price']]);
                         }
                     } else {
-                        // Create new topping
                         $topping = $product->toppings()->create([
                             'topping_id' => $toppingData['topping_id'],
                             'price' => $toppingData['price'],
@@ -284,7 +295,6 @@ class ProductController extends Controller implements HasMiddleware
                     }
                 }
                 
-                // Delete toppings not in the update
                 $deletedToppings = $product->toppings()->whereNotIn('id', $currentToppingIds)->get();
                 if ($deletedToppings->count() > 0) {
                     Log::info('Deleting toppings not in update:', ['ids' => $deletedToppings->pluck('id')->toArray()]);
@@ -308,13 +318,9 @@ class ProductController extends Controller implements HasMiddleware
     {
         Log::info('Deleting product:', ['id' => $product->id, 'name' => $product->name]);
 
-        // Delete associated image if exists
+        // Delete associated image from Supabase if exists
         if ($product->image_url) {
-            $imagePath = str_replace('/storage/', '', $product->image_url);
-            if (Storage::disk('public')->exists($imagePath)) {
-                Storage::disk('public')->delete($imagePath);
-                Log::info('Deleted product image:', ['path' => $imagePath]);
-            }
+            $this->deleteImageFromUrl($product->image_url);
         }
         
         $product->delete();
@@ -322,5 +328,49 @@ class ProductController extends Controller implements HasMiddleware
         Log::info('Product deleted successfully:', ['id' => $product->id]);
         
         return response()->json(['message' => 'Product deleted successfully']);
+    }
+
+    /**
+     * Helper method to delete image from Supabase using URL
+     */
+    private function deleteImageFromUrl(string $imageUrl): void
+    {
+        try {
+            // Extract the file path from the Supabase URL
+            // URL format: https://your-project.supabase.co/storage/v1/object/public/bucket/path
+            $urlParts = parse_url($imageUrl);
+            $path = $urlParts['path'] ?? '';
+            
+            // Remove the base storage path to get just the file path
+            $pattern = '/\/storage\/v1\/object\/public\/[^\/]+\//';
+            $filePath = preg_replace($pattern, '', $path);
+            
+            if ($filePath) {
+                $result = $this->supabaseService->deleteFile($filePath);
+                if ($result) {
+                    Log::info('Deleted image from Supabase:', ['path' => $filePath]);
+                } else {
+                    Log::warning('Failed to delete image from Supabase:', ['path' => $filePath]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Error deleting image from Supabase:', ['error' => $e->getMessage(), 'url' => $imageUrl]);
+        }
+    }
+
+    /**
+     * Test Supabase connection
+     */
+    public function testSupabase()
+    {
+        try {
+            $result = $this->supabaseService->testConnection();
+            return response()->json($result, $result['success'] ? 200 : 500);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }
