@@ -17,7 +17,7 @@ class NotificationController extends Controller implements HasMiddleware
     }
 
     /**
-     * Get notifications for the authenticated user
+     * Get notifications for the authenticated user with polling support
      */
     public function index(Request $request)
     {
@@ -29,10 +29,63 @@ class NotificationController extends Controller implements HasMiddleware
             $query->where('read', $request->boolean('read'));
         }
         
-        // Sort by latest by default and get all without pagination
-        $notifications = $query->latest()->get();
+        // Support for limiting results (useful for polling)
+        $limit = $request->input('limit', 50);
         
-        return response()->json(['notifications' => $notifications]);
+        // Get notifications with pagination support
+        $notifications = $query->latest()
+            ->limit($limit)
+            ->get();
+        
+        // Get counts for frontend
+        $unreadCount = $user->notifications()->where('read', false)->count();
+        $totalCount = $user->notifications()->count();
+        
+        return response()->json([
+            'notifications' => $notifications,
+            'unread_count' => $unreadCount,
+            'total_count' => $totalCount,
+            'timestamp' => now()->toISOString(), // For polling comparison
+        ]);
+    }
+
+    /**
+     * Get only unread notifications count (lightweight endpoint for frequent polling)
+     */
+    public function getUnreadCount(Request $request)
+    {
+        $user = $request->user();
+        $unreadCount = $user->notifications()->where('read', false)->count();
+        
+        return response()->json([
+            'unread_count' => $unreadCount,
+            'timestamp' => now()->toISOString(),
+        ]);
+    }
+
+    /**
+     * Get latest notifications since timestamp (for efficient polling)
+     */
+    public function getLatest(Request $request)
+    {
+        $user = $request->user();
+        $since = $request->input('since'); // ISO timestamp
+        
+        $query = $user->notifications();
+        
+        if ($since) {
+            $query->where('created_at', '>', $since);
+        }
+        
+        $notifications = $query->latest()->get();
+        $unreadCount = $user->notifications()->where('read', false)->count();
+        
+        return response()->json([
+            'notifications' => $notifications,
+            'unread_count' => $unreadCount,
+            'timestamp' => now()->toISOString(),
+            'has_new' => $notifications->count() > 0,
+        ]);
     }
 
     /**
@@ -47,7 +100,13 @@ class NotificationController extends Controller implements HasMiddleware
         
         $notification->update(['read' => true]);
         
-        return response()->json(['notification' => $notification]);
+        // Return updated unread count
+        $unreadCount = $request->user()->notifications()->where('read', false)->count();
+        
+        return response()->json([
+            'notification' => $notification,
+            'unread_count' => $unreadCount,
+        ]);
     }
 
     /**
@@ -58,6 +117,9 @@ class NotificationController extends Controller implements HasMiddleware
         $user = $request->user();
         $user->notifications()->where('read', false)->update(['read' => true]);
         
-        return response()->json(['message' => 'All notifications marked as read']);
+        return response()->json([
+            'message' => 'All notifications marked as read',
+            'unread_count' => 0,
+        ]);
     }
 }
