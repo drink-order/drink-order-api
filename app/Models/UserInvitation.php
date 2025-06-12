@@ -13,6 +13,7 @@ class UserInvitation extends Model
         'user_id',
         'token',
         'role',
+        'table_number',
         'expires_at',
         'used_at',
     ];

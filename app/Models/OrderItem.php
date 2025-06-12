@@ -15,7 +15,8 @@ class OrderItem extends Model
         'order_id',
         'product_size_id',
         'quantity',
-        'unit_price'
+        'unit_price',
+        'sugar_level',
     ];
 
     protected $casts = [
@@ -36,5 +37,18 @@ class OrderItem extends Model
     public function toppings(): HasMany
     {
         return $this->hasMany(OrderTopping::class);
+    }
+
+        public function getFormattedSugarLevelAttribute()
+    {
+        $levels = [
+            '0%' => 'No Sugar',
+            '25%' => 'Light Sweet',
+            '50%' => 'Half Sweet',
+            '75%' => 'Less Sweet',
+            '100%' => 'Regular'
+        ];
+
+        return $levels[$this->sugar_level] ?? 'Regular';
     }
 }

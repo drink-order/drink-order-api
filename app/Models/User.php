@@ -24,6 +24,8 @@ class User extends Authenticatable
         'phone',
         'phone_verified_at',
         'google_id',
+        'table_number',      
+        'expires_at',
     ];
 
     /**
@@ -51,6 +53,7 @@ class User extends Authenticatable
             'phone_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'expires_at' => 'datetime',
         ];
     }
 
@@ -98,5 +101,15 @@ class User extends Authenticatable
     public function notifications()
     {
         return $this->hasMany(Notification::class);
+    }
+
+    public function isGuest(): bool
+    {
+        return $this->role === 'guest';
+    }
+
+    public function isExpired(): bool
+    {
+        return $this->expires_at && $this->expires_at < now();
     }
 }

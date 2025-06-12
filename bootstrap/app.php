@@ -34,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Register the role middleware
         $middleware->alias([
             'role' => CheckRole::class,
+            'guest.session' => \App\Http\Middleware\CheckGuestSessionExpiration::class,
         ]);
 
         $middleware->append(StartSession::class);

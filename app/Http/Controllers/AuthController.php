@@ -30,13 +30,6 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
-        // Add debug logging
-        Log::info('=== LOGIN DEBUG ===');
-        Log::info('Request method: ' . $request->method());
-        Log::info('Request URL: ' . $request->url());
-        Log::info('All request data: ', $request->all());
-        Log::info('===================');
-
         // Handle both old format (email field) and new format (email/phone fields)
         $request->validate([
             'email' => 'nullable|string',
@@ -52,34 +45,25 @@ class AuthController extends Controller
         // Priority: specific email/phone fields, then identifier field
         if ($request->email) {
             // Email login
-            Log::info('Login attempt with email: ' . $request->email);
             $user = User::where('email', $request->email)->first();
             $loginField = 'email';
         } elseif ($request->phone) {
             // Phone login - normalize the phone number
             $originalPhone = $request->phone;
             $normalizedPhone = $this->normalizePhoneNumber($request->phone);
-            Log::info('Login attempt - Original phone: ' . $originalPhone);
-            Log::info('Login attempt - Normalized phone: ' . $normalizedPhone);
             
             $user = User::where('phone', $normalizedPhone)->first();
-            Log::info('User found with phone: ' . ($user ? 'Yes (ID: ' . $user->id . ')' : 'No'));
             $loginField = 'phone';
         } elseif ($request->identifier) {
             // Legacy support - check if identifier is email or phone
             $identifier = $request->identifier;
-            Log::info('Login attempt with identifier: ' . $identifier);
             
             if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
-                Log::info('Identifier detected as email');
                 $user = User::where('email', $identifier)->first();
                 $loginField = 'email';
             } else {
-                Log::info('Identifier detected as phone');
                 $normalizedPhone = $this->normalizePhoneNumber($identifier);
-                Log::info('Normalized phone: ' . $normalizedPhone);
                 $user = User::where('phone', $normalizedPhone)->first();
-                Log::info('User found with phone: ' . ($user ? 'Yes (ID: ' . $user->id . ')' : 'No'));
                 $loginField = 'phone';
             }
         } else {
@@ -89,7 +73,6 @@ class AuthController extends Controller
         }
 
         if (!$user) {
-            Log::info('User not found');
             // Return appropriate error field based on login method
             $errorField = $loginField === 'email' ? 'identifier' : 'identifier';
             throw ValidationException::withMessages([
@@ -98,15 +81,12 @@ class AuthController extends Controller
         }
 
         if (!Hash::check($request->password, $user->password)) {
-            Log::info('Password check failed for user ID: ' . $user->id);
             // Return appropriate error field based on login method
             $errorField = $loginField === 'email' ? 'identifier' : 'identifier';
             throw ValidationException::withMessages([
                 $errorField => ['The provided credentials are incorrect.'],
             ]);
         }
-
-        Log::info('Login successful for user ID: ' . $user->id);
 
         $deviceName = $request->device_name ?? ($request->userAgent() ?? 'unknown');
         $token = $user->createToken($deviceName)->plainTextToken;
@@ -411,11 +391,15 @@ class AuthController extends Controller
         return response()->json($request->user());
     }
 
-    /**
+/**
      * Handle invitation authentication
      */
-    public function handleInvitation(string $token)
+    public function handleInvitation(string $token, Request $request = null)
     {
+        if (!$request) {
+            $request = request();
+        }
+
         $invitation = UserInvitation::where('token', $token)
             ->with('user')
             ->first();
@@ -432,20 +416,92 @@ class AuthController extends Controller
             ], 400);
         }
 
-        // Get the user
-        $user = $invitation->user;
+        // If it's a GET request, just return invitation info
+        if ($request->isMethod('GET')) {
+            return response()->json([
+                'message' => 'Valid invitation found',
+                'restaurant' => $invitation->user->name ?? 'Restaurant',
+                'table_number' => $invitation->table_number, // Include table number
+                'invitation_valid' => true,
+                'expires_at' => $invitation->expires_at,
+                'next_step' => $invitation->table_number ? 
+                    'Click continue to access Table ' . $invitation->table_number : 
+                    'Please provide your table number to continue'
+            ]);
+        }
 
-        // Mark invitation as used
-        $invitation->update([
-            'used_at' => now()
-        ]);
+        // If it's a POST request, automatically use table number from invitation
+        $tableNumber = $invitation->table_number;
+        
+        // If no table number in invitation, try to get from URL or request as fallback
+        if (!$tableNumber) {
+            $tableNumber = $request->query('table') ?? $request->input('table_number');
+        }
 
-        // Create authentication token
-        $authToken = $user->createToken('invitation_auth')->plainTextToken;
+        if (!$tableNumber) {
+            return response()->json([
+                'message' => 'Table number not found. Please check your invitation link.',
+                'requires_table_number' => true
+            ], 422);
+        }
+
+        // Validate table number format
+        if (strlen($tableNumber) > 10) {
+            return response()->json([
+                'message' => 'Invalid table number format.'
+            ], 422);
+        }
+
+        // Get or create guest user for this table
+        $guestUser = $this->getOrCreateTableGuest($invitation->user_id, $tableNumber);
+
+        // Generate unique session ID
+        $sessionId = uniqid('sess_', true);
+        $expiresAt = now()->addHours(2); // 2 hours for guest session
+        
+        // Create token with custom expiration stored in abilities
+        $authToken = $guestUser->createToken("session_{$sessionId}", [
+            'guest:order',
+            'guest:read',
+            'expires_at:' . $expiresAt->timestamp
+        ])->plainTextToken;
 
         return response()->json([
-            'user' => $user,
-            'token' => $authToken
+            'user' => $guestUser,
+            'token' => $authToken,
+            'session_id' => $sessionId,
+            'table_number' => $guestUser->table_number,
+            'expires_at' => $expiresAt->toISOString(),
+            'expires_in' => 7200, // 2 hours in seconds
+            'message' => 'Session created successfully for Table ' . $tableNumber . '. Multiple users can order from this table.'
         ]);
+    }
+
+    private function getOrCreateTableGuest($restaurantUserId, $tableNumber)
+    {
+        // Find existing guest user for this table
+        $guestUser = User::where('role', 'guest')
+            ->where('table_number', $tableNumber)
+            ->first();
+
+        if (!$guestUser) {
+            // Create new guest user for this table
+            $guestUser = User::create([
+                'name' => "Table {$tableNumber}",
+                'email' => "table_{$tableNumber}_" . time() . '@temp.local',
+                'password' => Hash::make(Str::random(32)),
+                'role' => 'guest',
+                'table_number' => $tableNumber,
+                'expires_at' => now()->addHours(12), // Table guest account expires in 12 hours
+                'email_verified_at' => now(),
+            ]);
+
+            Log::info('New table guest user created', [
+                'user_id' => $guestUser->id,
+                'table_number' => $tableNumber
+            ]);
+        }
+
+        return $guestUser;
     }
 }

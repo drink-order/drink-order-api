@@ -60,6 +60,12 @@ class UserController extends Controller
      */
     public function updateProfile(Request $request)
     {
+        if ($request->user()->role === 'guest') {
+            return response()->json([
+                'message' => 'Guests cannot update profiles',
+                'error' => 'Access denied'
+            ], 403);
+        }
         $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'email' => 'sometimes|required|email|unique:users,email,' . $request->user()->id,
