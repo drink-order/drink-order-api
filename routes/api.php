@@ -120,4 +120,6 @@ Route::middleware(['auth:sanctum', 'guest.session'])->group(function () {
     // New polling-specific routes
     Route::get('/notifications/unread-count', [NotificationController::class, 'getUnreadCount']);
     Route::get('/notifications/latest', [NotificationController::class, 'getLatest']);
+
+    Route::post('/notifications/test', [NotificationController::class, 'sendTest']);
 });

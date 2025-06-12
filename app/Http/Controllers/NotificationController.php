@@ -122,4 +122,35 @@ class NotificationController extends Controller implements HasMiddleware
             'unread_count' => 0,
         ]);
     }
+
+/**
+ * Send test notification from backend service
+ */
+public function sendTest(Request $request)
+{
+    $user = $request->user();
+    $notificationService = app(\App\Services\NotificationService::class);
+    
+    try {
+        $notification = $notificationService->sendCustomNotification(
+            $user,
+            'Backend Test 🎉',
+            'This notification was created by the backend service and should appear in your frontend!',
+            'system' // Changed from 'test' to 'system' (which should be allowed)
+        );
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Test notification sent from backend service',
+            'notification' => $notification,
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to send notification',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
 }
