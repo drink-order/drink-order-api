@@ -30,7 +30,7 @@ class CreateNewUser implements CreatesNewUsers
             ],
             'phone' => ['nullable', 'string', 'max:20', Rule::unique(User::class)],
             'password' => $this->passwordRules(),
-            'role' => ['sometimes', Rule::in(['admin', 'shop_owner', 'staff', 'user'])],
+            'role' => ['sometimes', Rule::in(['admin', 'shop_owner', 'staff', 'user', 'guest'])],
         ])->validate();
 
         return User::create([
