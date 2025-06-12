@@ -20,10 +20,24 @@ class SendOrderStatusNotification
             default => "has been updated to {$event->newStatus}"
         };
 
+        $messageText = "Your order #{$event->order->id} {$statusMessage}.";
+
+        // CHECK FOR DUPLICATES: Don't create if notification already exists for this order/status in last 2 minutes
+        $existingNotification = Notification::where('user_id', $event->order->user_id)
+            ->where('order_id', $event->order->id)
+            ->where('message', $messageText)
+            ->where('created_at', '>=', now()->subMinutes(2))
+            ->first();
+
+        if ($existingNotification) {
+            // Duplicate found - don't create another one
+            return;
+        }
+
         // Create notification for the order owner
         Notification::create([
             'title' => 'Order Status Updated',
-            'message' => "Your order #{$event->order->id} {$statusMessage}.",
+            'message' => $messageText,
             'type' => 'order',
             'user_id' => $event->order->user_id,
             'order_id' => $event->order->id,
