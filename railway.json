@@ -4,6 +4,7 @@
   },
   "deploy": {
     "numReplicas": 1,
-    "sleepApplication": false
+    "sleepApplication": false,
+    "startCommand": "vendor/bin/heroku-php-apache2 public/"
   }
 }
