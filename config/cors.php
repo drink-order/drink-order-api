@@ -19,8 +19,9 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:3000',
-                        'drink-order-client.vercel.app'
+    'allowed_origins' => [
+        'http://localhost:3000',
+        env('FRONTEND_URL', 'https://drink-order-client.vercel.app')
     ],
 
     'allowed_origins_patterns' => [
