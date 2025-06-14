@@ -5,12 +5,14 @@ namespace App\Services;
 use App\Models\Notification;
 use App\Models\User;
 use App\Models\Order;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class NotificationService
 {
     /**
-     * Create a notification with duplicate prevention
+     * OPTIMIZED: Create a notification with duplicate prevention
      */
     public function createNotification(array $data): Notification
     {
@@ -19,35 +21,58 @@ class NotificationService
             throw new \InvalidArgumentException('Title, message, and user_id are required');
         }
 
-        // Check for duplicates in last 2 minutes
-        $existingNotification = Notification::where('user_id', $data['user_id'])
-            ->where('title', $data['title'])
-            ->where('message', $data['message'])
-            ->where('created_at', '>=', now()->subMinutes(2))
-            ->first();
+        try {
+            // Use DB transaction for consistency
+            return DB::transaction(function () use ($data) {
+                // Check for duplicates using efficient query
+                $exists = DB::table('notifications')
+                    ->where('user_id', $data['user_id'])
+                    ->where('title', $data['title'])
+                    ->where('message', $data['message'])
+                    ->where('created_at', '>=', now()->subMinutes(2))
+                    ->exists();
 
-        if ($existingNotification) {
-            Log::info('Duplicate notification prevented', ['existing_id' => $existingNotification->id]);
-            return $existingNotification;
+                if ($exists) {
+                    $existing = DB::table('notifications')
+                        ->where('user_id', $data['user_id'])
+                        ->where('title', $data['title'])
+                        ->where('message', $data['message'])
+                        ->where('created_at', '>=', now()->subMinutes(2))
+                        ->first();
+                    
+                    Log::info('Duplicate notification prevented', ['existing_id' => $existing->id]);
+                    return Notification::find($existing->id);
+                }
+
+                // Create notification using Eloquent for model events
+                $notification = Notification::create([
+                    'title' => $data['title'],
+                    'message' => $data['message'],
+                    'type' => $data['type'] ?? 'general',
+                    'user_id' => $data['user_id'],
+                    'order_id' => $data['order_id'] ?? null,
+                    'read' => false,
+                ]);
+
+                // Clear user's notification cache
+                Cache::forget("notification_count_user_{$data['user_id']}");
+
+                Log::info('Notification created', [
+                    'id' => $notification->id,
+                    'user_id' => $notification->user_id,
+                    'type' => $notification->type
+                ]);
+
+                return $notification;
+            });
+            
+        } catch (\Exception $e) {
+            Log::error('Notification creation failed', [
+                'data' => $data,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
         }
-
-        // Create notification
-        $notification = Notification::create([
-            'title' => $data['title'],
-            'message' => $data['message'],
-            'type' => $data['type'] ?? 'general',
-            'user_id' => $data['user_id'],
-            'order_id' => $data['order_id'] ?? null,
-            'read' => false,
-        ]);
-
-        Log::info('Notification created', [
-            'id' => $notification->id,
-            'user_id' => $notification->user_id,
-            'type' => $notification->type
-        ]);
-
-        return $notification;
     }
 
     /**

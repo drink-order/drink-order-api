@@ -59,7 +59,7 @@ class ProductController extends Controller implements HasMiddleware
         }
 
         $validatedData = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => 'required|string|max:255|unique:products,name',
             'category_id' => 'required|exists:categories,id',
             'is_available' => 'boolean',
             'image' => 'nullable|image|max:2048', // Max 2MB
@@ -153,7 +153,7 @@ class ProductController extends Controller implements HasMiddleware
         }
 
         $validatedData = $request->validate([
-            'name' => 'sometimes|required|string|max:255',
+            'name' => 'sometimes|required|string|max:255|unique:products,name,' . $product->id,
             'category_id' => 'sometimes|required|exists:categories,id',
             'is_available' => 'sometimes|boolean',
             'image' => 'nullable|image|max:2048',

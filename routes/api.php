@@ -112,14 +112,16 @@ Route::middleware(['auth:sanctum', 'guest.session'])->group(function () {
     // Dashboard route
     Route::get('/dashboard', [DashboardController::class, 'index']);
 
-    // Notification routes
+    // Notification routes with optimized middleware
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 
-    // New polling-specific routes
-    Route::get('/notifications/unread-count', [NotificationController::class, 'getUnreadCount']);
-    Route::get('/notifications/latest', [NotificationController::class, 'getLatest']);
+    // Optimized polling routes with connection middleware
+    Route::middleware([\App\Http\Middleware\OptimizePollingConnections::class])->group(function () {
+        Route::get('/notifications/unread-count', [NotificationController::class, 'getUnreadCount']);
+        Route::get('/notifications/latest', [NotificationController::class, 'getLatest']);
+    });
 
     Route::post('/notifications/test', [NotificationController::class, 'sendTest']);
 });
