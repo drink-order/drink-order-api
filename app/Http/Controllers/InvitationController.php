@@ -60,8 +60,8 @@ class InvitationController extends Controller
                 'token' => $token,
                 'table_number' => $request->table_number,
                 'user_id' => $request->user()->id, // The admin who created it
-                'role' => 'guest',
-                'expires_at' => now()->addHours(24),
+                // 'role' => 'guest',
+                'expires_at' => now()->addHours(2),
             ]);
 
             // Generate frontend URL with table number

@@ -35,6 +35,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => CheckRole::class,
             'guest.session' => \App\Http\Middleware\CheckGuestSessionExpiration::class,
+            'optimize.polling' => \App\Http\Middleware\OptimizePollingConnections::class,
+
         ]);
 
         $middleware->append(StartSession::class);

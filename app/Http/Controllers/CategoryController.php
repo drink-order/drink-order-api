@@ -32,7 +32,7 @@ class CategoryController extends Controller implements HasMiddleware
     public function store(Request $request)
     {
         $fields = $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255|unique:categories,name'
         ]);
 
         $category = Category::create([
@@ -57,7 +57,7 @@ class CategoryController extends Controller implements HasMiddleware
     public function update(Request $request, Category $category)
     {
         $fields = $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255|unique:categories,name,' . $category->id
         ]);
 
         $category->update($fields);

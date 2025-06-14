@@ -40,7 +40,7 @@ class ToppingController extends Controller implements HasMiddleware
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => 'required|string|max:255|unique:toppings,name',
             'is_available' => 'boolean',
         ]);
         
@@ -63,7 +63,7 @@ class ToppingController extends Controller implements HasMiddleware
     public function update(Request $request, Topping $topping)
     {
         $validated = $request->validate([
-            'name' => 'string|max:255',
+            'name' => 'string|max:255|unique:toppings,name,' . $topping->id,
             'is_available' => 'boolean',
         ]);
         
