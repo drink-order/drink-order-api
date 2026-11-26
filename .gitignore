@@ -9,6 +9,8 @@
 .env
 .env.backup
 .env.production
+# Any env file (including .env.example and copies) — these hold real secrets in this repo
+.env*
 .phpactor.json
 .phpunit.result.cache
 Homestead.json

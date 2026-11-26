@@ -31,6 +31,23 @@ class SupabaseStorageService
     }
 
     /**
+     * Auth headers for Supabase.
+     * New secret keys (sb_secret_...) are not JWTs and must be sent only in the `apikey` header.
+     * Legacy service_role JWTs are sent in both headers.
+     */
+    private function authHeaders(): array
+    {
+        if (str_starts_with($this->serviceKey, 'sb_')) {
+            return ['apikey' => $this->serviceKey];
+        }
+
+        return [
+            'apikey' => $this->serviceKey,
+            'Authorization' => "Bearer {$this->serviceKey}",
+        ];
+    }
+
+    /**
      * Upload file to Supabase Storage
      */
     public function uploadFile(UploadedFile $file, ?string $customPath = null): array
@@ -44,7 +61,7 @@ class SupabaseStorageService
                 "{$this->baseUrl}/storage/v1/object/{$this->bucket}/{$filePath}",
                 [
                     'headers' => [
-                        'Authorization' => "Bearer {$this->serviceKey}",
+                        ...$this->authHeaders(),
                         'Content-Type' => $file->getMimeType(),
                         'x-upsert' => 'true', // Allow overwrite
                     ],
@@ -96,7 +113,7 @@ class SupabaseStorageService
                 "{$this->baseUrl}/storage/v1/object/{$this->bucket}/{$filePath}",
                 [
                     'headers' => [
-                        'Authorization' => "Bearer {$this->serviceKey}",
+                        ...$this->authHeaders(),
                     ]
                 ]
             );
@@ -119,7 +136,7 @@ class SupabaseStorageService
                 "{$this->baseUrl}/storage/v1/object/list/{$this->bucket}",
                 [
                     'headers' => [
-                        'Authorization' => "Bearer {$this->serviceKey}",
+                        ...$this->authHeaders(),
                         'Content-Type' => 'application/json',
                     ],
                     'json' => [
@@ -165,7 +182,7 @@ class SupabaseStorageService
                 "{$this->baseUrl}/storage/v1/bucket/{$this->bucket}",
                 [
                     'headers' => [
-                        'Authorization' => "Bearer {$this->serviceKey}",
+                        ...$this->authHeaders(),
                     ]
                 ]
             );
