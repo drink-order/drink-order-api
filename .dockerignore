@@ -1,0 +1,22 @@
+.git
+.github
+.env
+.env.*
+vendor
+node_modules
+tests
+.phpunit.cache
+.phpunit.result.cache
+
+# Local caches/logs (bootstrap/cache may list dev-only providers like Pail and break the build)
+bootstrap/cache/*.php
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+public/storage
+public/hot
+public/build
+
+.idea
+.vscode

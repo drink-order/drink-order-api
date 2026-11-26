@@ -357,20 +357,4 @@ class ProductController extends Controller implements HasMiddleware
             Log::error('Error deleting image from Supabase:', ['error' => $e->getMessage(), 'url' => $imageUrl]);
         }
     }
-
-    /**
-     * Test Supabase connection
-     */
-    public function testSupabase()
-    {
-        try {
-            $result = $this->supabaseService->testConnection();
-            return response()->json($result, $result['success'] ? 200 : 500);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
 }

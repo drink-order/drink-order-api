@@ -26,6 +26,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->prepend(HandleCors::class);
 
+        // Behind Render's load balancer: trust X-Forwarded-* so client IPs (OTP throttling) and HTTPS are detected correctly
+        $middleware->trustProxies(at: '*');
+
         // Disable CSRF protection
         $middleware->validateCsrfTokens(except: [
             '*'

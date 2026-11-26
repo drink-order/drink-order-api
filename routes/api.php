@@ -16,16 +16,11 @@ use Illuminate\Http\Request;
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-Route::get('/test-supabase', [App\Http\Controllers\ProductController::class, 'testSupabase']);
 
 // OTP routes with throttling
 Route::middleware('throttle:otp')->group(function () {
     Route::post('/send-otp', [AuthController::class, 'sendOtp']);
     Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
-});
-
-Route::get('/test-twilio', function (App\Services\TwilioService $twilio) {
-    return response()->json($twilio->testConnection());
 });
 
 // Public invitation authentication routes (no auth required for guests)
